@@ -1,0 +1,19 @@
+{
+  "name": "angular-love-articles",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.6.5",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "publish:posts": "tsx scripts/publish.ts"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "marked": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

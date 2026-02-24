@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="signalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#dd0031;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c3002f;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="computedGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="effectGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    <marker id="arrowRed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dd0031" />
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6" />
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="480" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="400" y="44" text-anchor="middle" font-family="monospace" font-size="20" font-weight="bold" fill="#f1f5f9">
+    Angular Signals — Reactive Graph
+  </text>
+
+  <!-- ── signal() box ── -->
+  <rect x="60" y="160" width="160" height="80" rx="10" fill="url(#signalGrad)" filter="url(#glow)"/>
+  <text x="140" y="192" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#fff">signal()</text>
+  <text x="140" y="212" text-anchor="middle" font-family="monospace" font-size="11" fill="#fecaca">Writable State</text>
+  <text x="140" y="228" text-anchor="middle" font-family="monospace" font-size="10" fill="#fca5a5">set() · update() · mutate()</text>
+
+  <!-- ── computed() box ── -->
+  <rect x="320" y="100" width="160" height="80" rx="10" fill="url(#computedGrad)" filter="url(#glow)"/>
+  <text x="400" y="132" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#fff">computed()</text>
+  <text x="400" y="152" text-anchor="middle" font-family="monospace" font-size="11" fill="#bfdbfe">Derived State</text>
+  <text x="400" y="168" text-anchor="middle" font-family="monospace" font-size="10" fill="#93c5fd">lazy · memoised</text>
+
+  <!-- ── second signal() box ── -->
+  <rect x="60" y="300" width="160" height="80" rx="10" fill="url(#signalGrad)" filter="url(#glow)"/>
+  <text x="140" y="332" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#fff">signal()</text>
+  <text x="140" y="352" text-anchor="middle" font-family="monospace" font-size="11" fill="#fecaca">Writable State</text>
+  <text x="140" y="368" text-anchor="middle" font-family="monospace" font-size="10" fill="#fca5a5">e.g. price, quantity</text>
+
+  <!-- ── effect() box ── -->
+  <rect x="320" y="300" width="160" height="80" rx="10" fill="url(#effectGrad)" filter="url(#glow)"/>
+  <text x="400" y="332" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#fff">effect()</text>
+  <text x="400" y="352" text-anchor="middle" font-family="monospace" font-size="11" fill="#a7f3d0">Side Effects</text>
+  <text x="400" y="368" text-anchor="middle" font-family="monospace" font-size="10" fill="#6ee7b7">DOM · HTTP · Storage</text>
+
+  <!-- ── Template box ── -->
+  <rect x="580" y="190" width="160" height="80" rx="10" fill="#334155" stroke="#64748b" stroke-width="1.5"/>
+  <text x="660" y="222" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#e2e8f0">Template</text>
+  <text x="660" y="242" text-anchor="middle" font-family="monospace" font-size="11" fill="#94a3b8">{{ signal() }}</text>
+  <text x="660" y="258" text-anchor="middle" font-family="monospace" font-size="10" fill="#64748b">fine-grained updates</text>
+
+  <!-- Arrows: signal → computed -->
+  <line x1="220" y1="185" x2="318" y2="155" stroke="#dd0031" stroke-width="2" marker-end="url(#arrowRed)" stroke-dasharray="6,3"/>
+  <!-- Arrows: signal (bottom) → computed -->
+  <line x1="220" y1="325" x2="318" y2="165" stroke="#dd0031" stroke-width="2" marker-end="url(#arrowRed)" stroke-dasharray="6,3"/>
+  <!-- Arrows: signal → effect -->
+  <line x1="220" y1="355" x2="318" y2="345" stroke="#dd0031" stroke-width="2" marker-end="url(#arrowRed)" stroke-dasharray="6,3"/>
+  <!-- Arrow: computed → template -->
+  <line x1="480" y1="145" x2="578" y2="215" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <!-- Arrow: signal → template (direct) -->
+  <line x1="220" y1="200" x2="578" y2="225" stroke="#dd0031" stroke-width="1.5" marker-end="url(#arrowRed)" stroke-dasharray="4,4"/>
+  <!-- Arrow: computed → effect -->
+  <line x1="400" y1="180" x2="400" y2="298" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- Legend -->
+  <rect x="60" y="420" width="12" height="12" fill="#dd0031" rx="2"/>
+  <text x="78" y="431" font-family="monospace" font-size="11" fill="#94a3b8">signal — writable</text>
+  <rect x="210" y="420" width="12" height="12" fill="#3b82f6" rx="2"/>
+  <text x="228" y="431" font-family="monospace" font-size="11" fill="#94a3b8">computed — derived</text>
+  <rect x="390" y="420" width="12" height="12" fill="#10b981" rx="2"/>
+  <text x="408" y="431" font-family="monospace" font-size="11" fill="#94a3b8">effect — side-effects</text>
+  <rect x="560" y="420" width="12" height="12" fill="#334155" stroke="#64748b" stroke-width="1" rx="2"/>
+  <text x="578" y="431" font-family="monospace" font-size="11" fill="#94a3b8">template</text>
+
+  <!-- angular logo watermark -->
+  <text x="740" y="468" text-anchor="end" font-family="monospace" font-size="10" fill="#334155">angular.love</text>
+</svg>

@@ -1,0 +1,27 @@
+name: Publish Posts
+on:
+  push:
+    branches: [main]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2          # CRITICAL: needed for git diff HEAD~1
+
+      - uses: pnpm/action-setup@v4
+        # reads packageManager version from package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm tsx scripts/publish.ts
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH_USER: ${{ secrets.WP_AUTH_USER }}
+          WP_AUTH_PASSWORD: ${{ secrets.WP_AUTH_PASSWORD }}
