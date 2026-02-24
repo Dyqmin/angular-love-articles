@@ -24,7 +24,8 @@ export class WordPressClient {
   private readonly tagCache = new Map<string, number>();
 
   constructor({ url, user, password }: ClientOptions) {
-    this.baseUrl = url.replace(/\/$/, '') + '/wp-json/wp/v2';
+    const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    this.baseUrl = normalizedUrl.replace(/\/$/, '') + '/wp-json/wp/v2';
     this.authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
   }
 
