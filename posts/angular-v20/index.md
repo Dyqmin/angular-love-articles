@@ -56,7 +56,7 @@ A signal holds a value and notifies all dependants when it changes.
 ```typescript
 import { signal } from '@angular/core';
 
-const count = signal(0);
+const count = signal(1);
 
 // Read the current value
 console.log(count()); // 0
