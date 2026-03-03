@@ -11,6 +11,11 @@ export interface PostFrontmatter {
   coverImage?: string; // relative path, e.g. ./assets/cover.jpg
 }
 
+export interface ChangedFile {
+  slug: string;
+  lang: 'en' | 'pl';
+}
+
 export interface WordPressPost {
   id: number;
   slug: string;
@@ -55,12 +60,14 @@ export interface WordPressPayload {
   categories: number[];
   tags: number[];
   date: string;
+  lang: 'en' | 'pl';
   meta?: Record<string, unknown>;
   featured_media?: number;
 }
 
 export interface PublishResult {
   slug: string;
+  lang: 'en' | 'pl';
   action: 'created' | 'updated' | 'trashed' | 'error';
   postId?: number;
   error?: string;

@@ -2,13 +2,15 @@
 try { process.loadEnvFile(); } catch { /* not present — rely on real env vars */ }
 
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
-import { detectChangedPosts, detectDeletedPosts } from './diff.js';
+import { detectChangedFiles, detectDeletedFiles } from './diff.js';
+import { validateFrontmatter } from './validation.js';
 import { convertMarkdownToHTML, calculateReadingTime } from './markdown.js';
 import { scanMarkdownImages, replaceImagePaths } from './images.js';
 import { WordPressClient } from './wordpress.js';
-import type { PostFrontmatter, PublishResult, WordPressPayload } from './types.js';
+import type { ChangedFile, PublishResult, WordPressPayload } from './types.js';
 
 // ── Environment validation ────────────────────────────────────────────────────
 
@@ -21,39 +23,16 @@ if (!WP_URL || !WP_AUTH_USER || !WP_AUTH_PASSWORD) {
   process.exit(1);
 }
 
-// ── Frontmatter validation ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const VALID_STATUSES = new Set(['draft', 'publish', 'trash']);
-const VALID_DIFFICULTIES = new Set(['beginner', 'intermediate', 'advanced']);
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function validateFrontmatter(fm: unknown, slug: string): PostFrontmatter {
-  const f = fm as Record<string, unknown>;
-
-  const required = ['title', 'slug', 'author', 'date', 'category', 'tags', 'status', 'difficulty', 'excerpt'];
-  for (const field of required) {
-    if (f[field] === undefined || f[field] === null || f[field] === '') {
-      throw new Error(`Missing required frontmatter field: ${field}`);
-    }
+function groupBySlug(files: ChangedFile[]): Map<string, ('en' | 'pl')[]> {
+  const map = new Map<string, ('en' | 'pl')[]>();
+  for (const { slug, lang } of files) {
+    const langs = map.get(slug) ?? [];
+    langs.push(lang);
+    map.set(slug, langs);
   }
-
-  if (!VALID_STATUSES.has(f['status'] as string)) {
-    throw new Error(`Invalid status "${f['status']}" — must be one of: draft, publish, trash`);
-  }
-  if (!VALID_DIFFICULTIES.has(f['difficulty'] as string)) {
-    throw new Error(`Invalid difficulty "${f['difficulty']}" — must be one of: beginner, intermediate, advanced`);
-  }
-  if (!EMAIL_RE.test(f['author'] as string)) {
-    throw new Error(`Invalid author email: "${f['author']}"`);
-  }
-  if (!Array.isArray(f['tags'])) {
-    throw new Error('frontmatter "tags" must be an array');
-  }
-  if (f['slug'] !== slug) {
-    console.warn(`⚠  Frontmatter slug "${f['slug']}" differs from folder name "${slug}" — using folder name`);
-  }
-
-  return f as unknown as PostFrontmatter;
+  return map;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -67,139 +46,206 @@ async function main(): Promise<void> {
 
   const results: PublishResult[] = [];
 
-  // Detect changes
-  const changedSlugs = detectChangedPosts();
-  const deletedSlugs = detectDeletedPosts();
+  // ── Step 1: Detect changes ───────────────────────────────────────────────
+  const changedFiles = detectChangedFiles();
+  const deletedFiles = detectDeletedFiles();
 
-  console.log(`Changed posts:  ${changedSlugs.join(', ') || '(none)'}`);
-  console.log(`Deleted posts:  ${deletedSlugs.join(', ') || '(none)'}`);
+  const changedBySlugs = groupBySlug(changedFiles);
+  const deletedBySlugs = groupBySlug(deletedFiles);
 
-  // ── Handle file deletions ────────────────────────────────────────────────
-  for (const slug of deletedSlugs) {
-    console.warn(`⚠  Post folder deleted for "${slug}". Prefer setting status: trash in frontmatter instead.`);
-    try {
-      const existing = await client.findPostBySlug(slug);
-      if (existing) {
-        await client.trashPost(existing.id);
-        console.log(`  Trashed post: ${slug} (id=${existing.id})`);
-        results.push({ slug, action: 'trashed', postId: existing.id });
-      } else {
-        console.log(`  No WP post found for deleted slug: ${slug}`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`  Error trashing ${slug}: ${message}`);
-      results.push({ slug, action: 'error', error: message });
-    }
-  }
+  console.log(
+    `Changed files:  ${changedFiles.map((f) => `${f.slug}/${f.lang}.md`).join(', ') || '(none)'}`,
+  );
+  console.log(
+    `Deleted files:  ${deletedFiles.map((f) => `${f.slug}/${f.lang}.md`).join(', ') || '(none)'}`,
+  );
 
-  // ── Handle changed posts ─────────────────────────────────────────────────
-  for (const slug of changedSlugs) {
-    try {
-      const postDir = resolve(`posts/${slug}`);
-      const indexPath = join(postDir, 'index.md');
+  // ── Step 2: Validate all changed posts up front ───────────────────────────
+  const allValidationErrors: string[] = [];
+  // Cache parsed frontmatter to avoid double-reading files
+  const parsedCache = new Map<string, { data: unknown; content: string }>();
 
-      if (!existsSync(indexPath)) {
-        throw new Error(`index.md not found for slug "${slug}" at ${indexPath}`);
-      }
+  for (const [slug, langs] of changedBySlugs) {
+    const postDir = resolve(`posts/${slug}`);
+    const slugsInFolder: string[] = [];
 
-      const raw = readFileSync(indexPath, 'utf8');
-      const { data, content: rawBody } = matter(raw);
-      const fm = validateFrontmatter(data, slug);
+    for (const lang of langs) {
+      const filePath = `posts/${slug}/${lang}.md`;
+      const absPath = join(postDir, `${lang}.md`);
 
-      // ── Status: trash → soft-delete ──────────────────────────────────────
-      if (fm.status === 'trash') {
-        const existing = await client.findPostBySlug(slug);
-        if (existing) {
-          await client.trashPost(existing.id);
-          console.log(`  Trashed post: ${slug} (id=${existing.id})`);
-          results.push({ slug, action: 'trashed', postId: existing.id });
-        } else {
-          console.log(`  Post "${slug}" is marked trash but not found in WP — skipping`);
-        }
+      if (!existsSync(absPath)) {
+        allValidationErrors.push(`[${filePath}] file not found on disk`);
         continue;
       }
 
-      // ── Resolve author ───────────────────────────────────────────────────
-      const authorId = await client.resolveAuthor(fm.author);
+      const raw = readFileSync(absPath, 'utf8');
+      const { data, content } = matter(raw);
+      parsedCache.set(filePath, { data, content });
 
-      // ── Resolve category ─────────────────────────────────────────────────
-      const categoryId = await client.resolveCategory(fm.category);
+      const { errors } = validateFrontmatter(data, slug, filePath);
+      allValidationErrors.push(...errors);
 
-      // ── Resolve tags ─────────────────────────────────────────────────────
-      const tagIds = await Promise.all(fm.tags.map((tag) => client.resolveTag(tag)));
+      const fm = data as Record<string, unknown>;
+      if (typeof fm['slug'] === 'string') slugsInFolder.push(fm['slug']);
+    }
 
-      // ── Upload cover image ───────────────────────────────────────────────
-      let featuredMediaId: number | undefined;
-      if (fm.coverImage) {
-        const coverPath = resolve(join(postDir, fm.coverImage.replace(/^\.\//, '')));
-        if (existsSync(coverPath)) {
-          const media = await client.uploadMedia(coverPath);
-          featuredMediaId = media.id;
-          console.log(`  Uploaded cover image: ${media.source_url}`);
-        } else {
-          console.warn(`  ⚠  Cover image not found: ${coverPath}`);
-        }
-      }
-
-      // ── Upload inline images ─────────────────────────────────────────────
-      const inlineImagePaths = scanMarkdownImages(rawBody);
-      const imageMapping = new Map<string, string>();
-
-      for (const relPath of inlineImagePaths) {
-        const absPath = resolve(join(postDir, relPath.replace(/^\.\//, '')));
-        if (existsSync(absPath)) {
-          const media = await client.uploadMedia(absPath);
-          imageMapping.set(relPath, media.source_url);
-          console.log(`  Uploaded inline image: ${media.source_url}`);
-        } else {
-          console.warn(`  ⚠  Inline image not found: ${absPath}`);
-        }
-      }
-
-      // ── Process body ─────────────────────────────────────────────────────
-      const readingTime = calculateReadingTime(rawBody); // use original body
-      const processedBody = replaceImagePaths(rawBody, imageMapping);
-      const htmlContent = convertMarkdownToHTML(processedBody);
-
-      // ── Build payload ─────────────────────────────────────────────────────
-      const payload: WordPressPayload = {
-        title: fm.title,
-        slug: slug,
-        content: htmlContent,
-        excerpt: fm.excerpt,
-        status: fm.status, // 'draft' | 'publish'
-        author: authorId,
-        categories: [categoryId],
-        tags: tagIds,
-        date: fm.date,
-        meta: {
-          reading_time: readingTime,
-          difficulty: fm.difficulty,
-        },
-        ...(featuredMediaId !== undefined && { featured_media: featuredMediaId }),
-      };
-
-      // ── Create or update ─────────────────────────────────────────────────
-      const existing = await client.findPostBySlug(slug);
-
-      if (existing) {
-        const id = await client.updatePost(existing.id, payload);
-        console.log(`  Updated post: ${slug} (id=${id})`);
-        results.push({ slug, action: 'updated', postId: id });
-      } else {
-        const id = await client.createPost(payload);
-        console.log(`  Created post: ${slug} (id=${id})`);
-        results.push({ slug, action: 'created', postId: id });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`  Error processing "${slug}": ${message}`);
-      results.push({ slug, action: 'error', error: message });
+    // Slug consistency — both language files in the same folder must share the same slug
+    if (slugsInFolder.length === 2 && slugsInFolder[0] !== slugsInFolder[1]) {
+      allValidationErrors.push(
+        `[posts/${slug}/] en.md and pl.md have different slug values: ` +
+          `"${slugsInFolder[0]}" vs "${slugsInFolder[1]}"`,
+      );
     }
   }
 
-  // ── Summary ──────────────────────────────────────────────────────────────
+  if (allValidationErrors.length > 0) {
+    console.error('\nValidation failed — fix the errors below before publishing:\n');
+    for (const err of allValidationErrors) {
+      console.error(`  ✗ ${err}`);
+    }
+    process.exit(1);
+  }
+
+  // ── Step 3: Handle deleted language files ────────────────────────────────
+  for (const [slug, langs] of deletedBySlugs) {
+    console.warn(
+      `⚠  Deleted: posts/${slug}/ (${langs.join(', ')}). ` +
+        `Prefer setting status: trash in frontmatter instead.`,
+    );
+    for (const lang of langs) {
+      try {
+        const existing = await client.findPostBySlug(slug, lang);
+        if (existing) {
+          await client.trashPost(existing.id);
+          console.log(`  Trashed ${lang} post: ${slug} (id=${existing.id})`);
+          results.push({ slug, lang, action: 'trashed', postId: existing.id });
+        } else {
+          console.log(`  No WP post found for deleted ${slug}/${lang}.md`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`  Error trashing ${slug}/${lang}: ${message}`);
+        results.push({ slug, lang, action: 'error', error: message });
+      }
+    }
+  }
+
+  // ── Step 4: Process changed posts ────────────────────────────────────────
+  for (const [slug, langs] of changedBySlugs) {
+    const postDir = resolve(`posts/${slug}`);
+
+    // Upload images once per folder — shared across all language files
+    const imageMapping = new Map<string, string>();
+    const allInlinePaths = new Set<string>();
+
+    for (const lang of langs) {
+      const filePath = `posts/${slug}/${lang}.md`;
+      const cached = parsedCache.get(filePath);
+      if (cached) {
+        for (const p of scanMarkdownImages(cached.content)) allInlinePaths.add(p);
+      }
+    }
+
+    for (const relPath of allInlinePaths) {
+      const absPath = resolve(join(postDir, relPath.replace(/^\.\//, '')));
+      if (existsSync(absPath)) {
+        try {
+          const media = await client.uploadMedia(absPath);
+          imageMapping.set(relPath, media.source_url);
+          console.log(`  [${slug}] Uploaded image: ${media.source_url}`);
+        } catch (err) {
+          console.warn(`  ⚠  [${slug}] Failed to upload ${relPath}: ${(err as Error).message}`);
+        }
+      } else {
+        console.warn(`  ⚠  [${slug}] Inline image not found: ${absPath}`);
+      }
+    }
+
+    // Process each language file independently
+    for (const lang of langs) {
+      const filePath = `posts/${slug}/${lang}.md`;
+      try {
+        const cached = parsedCache.get(filePath)!;
+        // validateFrontmatter already passed — cast is safe
+        const { frontmatter: fm } = validateFrontmatter(cached.data, slug, filePath);
+        if (!fm) throw new Error('Unexpected validation miss');
+
+        // ── Trash ────────────────────────────────────────────────────────────
+        if (fm.status === 'trash') {
+          const existing = await client.findPostBySlug(slug, lang);
+          if (existing) {
+            await client.trashPost(existing.id);
+            console.log(`  Trashed ${lang} post: ${slug} (id=${existing.id})`);
+            results.push({ slug, lang, action: 'trashed', postId: existing.id });
+          } else {
+            console.log(`  ${lang} post "${slug}" marked trash but not in WP — skipping`);
+          }
+          continue;
+        }
+
+        // ── Resolve WP objects ───────────────────────────────────────────────
+        const authorId = await client.resolveAuthor(fm.author);
+        const categoryId = await client.resolveCategory(fm.category);
+        const tagIds = await Promise.all(fm.tags.map((tag) => client.resolveTag(tag)));
+
+        // ── Cover image ──────────────────────────────────────────────────────
+        let featuredMediaId: number | undefined;
+        if (fm.coverImage) {
+          const coverPath = resolve(join(postDir, fm.coverImage.replace(/^\.\//, '')));
+          if (existsSync(coverPath)) {
+            const media = await client.uploadMedia(coverPath);
+            featuredMediaId = media.id;
+            console.log(`  [${slug}/${lang}] Uploaded cover: ${media.source_url}`);
+          } else {
+            console.warn(`  ⚠  [${slug}/${lang}] Cover image not found: ${coverPath}`);
+          }
+        }
+
+        // ── Build content ────────────────────────────────────────────────────
+        const rawBody = cached.content;
+        const readingTime = calculateReadingTime(rawBody);
+        const processedBody = replaceImagePaths(rawBody, imageMapping);
+        const htmlContent = convertMarkdownToHTML(processedBody);
+
+        // ── Payload ──────────────────────────────────────────────────────────
+        const payload: WordPressPayload = {
+          title: fm.title,
+          slug,
+          content: htmlContent,
+          excerpt: fm.excerpt,
+          status: fm.status,
+          author: authorId,
+          categories: [categoryId],
+          tags: tagIds,
+          date: fm.date,
+          lang,
+          meta: {
+            reading_time: readingTime,
+            difficulty: fm.difficulty,
+          },
+          ...(featuredMediaId !== undefined && { featured_media: featuredMediaId }),
+        };
+
+        // ── Create or update ─────────────────────────────────────────────────
+        const existing = await client.findPostBySlug(slug, lang);
+        if (existing) {
+          const id = await client.updatePost(existing.id, payload);
+          console.log(`  Updated ${lang} post: ${slug} (id=${id})`);
+          results.push({ slug, lang, action: 'updated', postId: id });
+        } else {
+          const id = await client.createPost(payload);
+          console.log(`  Created ${lang} post: ${slug} (id=${id})`);
+          results.push({ slug, lang, action: 'created', postId: id });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`  Error processing ${slug}/${lang}.md: ${message}`);
+        results.push({ slug, lang, action: 'error', error: message });
+      }
+    }
+  }
+
+  // ── Summary ───────────────────────────────────────────────────────────────
   const created = results.filter((r) => r.action === 'created').length;
   const updated = results.filter((r) => r.action === 'updated').length;
   const trashed = results.filter((r) => r.action === 'trashed').length;
@@ -213,13 +259,18 @@ async function main(): Promise<void> {
 
   if (errors.length > 0) {
     for (const e of errors) {
-      console.error(`  ✗ ${e.slug}: ${e.error}`);
+      console.error(`  ✗ ${e.slug}/${e.lang}: ${e.error}`);
     }
     process.exit(1);
   }
 }
 
-main().catch((err) => {
-  console.error('Unexpected fatal error:', err);
-  process.exit(1);
-});
+export { main };
+
+// Run only when executed directly (not when imported by tests)
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error('Unexpected fatal error:', err);
+    process.exit(1);
+  });
+}

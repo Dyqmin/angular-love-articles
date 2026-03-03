@@ -101,9 +101,10 @@ export class WordPressClient {
     return created.id;
   }
 
-  async findPostBySlug(slug: string): Promise<{ id: number } | null> {
+  async findPostBySlug(slug: string, lang?: 'en' | 'pl'): Promise<{ id: number } | null> {
+    const langParam = lang ? `&lang=${lang}` : '';
     const posts = await this.request<WordPressPost[]>(
-      `/posts?slug=${encodeURIComponent(slug)}&status=any&per_page=1`,
+      `/posts?slug=${encodeURIComponent(slug)}&status=any&per_page=1${langParam}`,
     );
     return posts.length > 0 ? { id: posts[0].id } : null;
   }
