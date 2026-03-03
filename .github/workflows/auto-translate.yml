@@ -1,0 +1,29 @@
+name: Auto Translate
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  translate-article:
+    if: github.event.label.name == 'auto-translate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: .claude/instructions/auto-translate.md
+          claude_args: |
+            --model claude-sonnet-4-5-20250929
+            --max-turns 20
+            --allowedTools "View,Edit,Write,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status),Bash(ls:*),Bash(cat:*),Bash(find:*)"

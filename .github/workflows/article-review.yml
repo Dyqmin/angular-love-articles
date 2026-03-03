@@ -1,0 +1,27 @@
+name: Article Review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review-article:
+    if: github.event.label.name == 'article-review'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: .claude/instructions/article-review.md
+          claude_args: |
+            --model claude-sonnet-4-5-20250929
+            --max-turns 15
