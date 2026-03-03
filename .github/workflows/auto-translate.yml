@@ -22,7 +22,8 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: .claude/instructions/auto-translate.md
+          prompt: |
+            Read the file .claude/instructions/auto-translate.md and follow those instructions to translate the article(s) in this PR.
           claude_args: |
             --model claude-sonnet-4-5-20250929
             --max-turns 20
