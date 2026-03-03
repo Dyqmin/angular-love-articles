@@ -2,7 +2,7 @@ name: Article Review
 
 on:
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:
   review-article:
